@@ -1,0 +1,17 @@
+{
+  "name": "GestaoAPPUpdate",
+  "displayName": "GestaoAPPUpdate",
+  "expo": {
+    "name": "GestaoAPPUpdate",
+    "slug": "GestaoAPPUpdate",
+    "version": "1.0.0",
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  },
+  "androidNavigationBar": {
+    "visible": true,
+    "barStyle": "light-content",
+    "backgroundColor": "white"
+  }
+}
