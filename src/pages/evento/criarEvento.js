@@ -20,6 +20,7 @@ import * as cooperadoDAO from '../../sql/DAO/cooperadosDAO';
 import * as formularioDAO from '../../sql/DAO/formularioDAO';
 import * as evento_agendaDAO from '../../sql/DAO/evento_agendaDAO';
 import * as submissaoDAO from '../../sql/DAO/submissaoDAO';
+import * as parametroDAO from '../../sql/DAO/parametrosDAO';
 
 const CriarEvento = ({ navigation, id_tecnico }) => {
 
@@ -165,12 +166,15 @@ const CriarEvento = ({ navigation, id_tecnico }) => {
         confirm: 'Continuar',
         cancel: ''
       }
+      console.log('Aqui');
       //MARCANDO QUE EXISTEM DADOS NA BASE LOCAL A SEREM ATUALIZADOS
       await parametroDAO.updateParametrosByChave('atualizar', '1');
+
       setAlertProps(errorMsg);
       setAplicando(false);
       setShowAlert(true);
     } catch (erro) {
+      console.log(erro);
       setAlertProps(erro);
       setAplicando(false);
       setShowAlert(true);

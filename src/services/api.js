@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as parametroDAO from '../sql/DAO/parametrosDAO';
 
 const api = axios.create({
-  //baseURL: 'http://192.168.10.26:8000/',
+  //baseURL: 'http://192.168.1.31:8000/',
   baseURL: 'http://apigestaocooperados.selita.coop.br/',
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' }

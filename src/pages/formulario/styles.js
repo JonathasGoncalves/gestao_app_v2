@@ -1,6 +1,9 @@
 import { Dimensions, StyleSheet, PixelRatio } from 'react-native';
 import Constants from 'expo-constants';
 
+const windowWidth = Dimensions.get('window').width;
+const windowHeight = Dimensions.get('window').height;
+
 var FONT_SIZE_TITULOS = 20;
 var FONT_SIZE_TEXT = 18;
 var FONT_SIZE_LIST = 18;
@@ -117,6 +120,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     backgroundColor: '#00BFFF'
   },
+  textButtonPadrao: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  containerButtonPadrao: {
+    backgroundColor: '#00BFFF',
+    width: 200,
+    borderRadius: 5,
+    alignSelf: "center",
+    marginTop: 25,
+    marginBottom: 25,
+    borderWidth: 0
+  },
   observacoes_input: {
     flex: 1,
     borderWidth: 0.7,
@@ -141,6 +158,47 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%'
+  },
+  image_obs: {
+    backgroundColor: 'transparent',
+    width: windowWidth * 0.18,
+    height: windowWidth * 0.18,
+    marginTop: windowWidth * 0.028,
+    marginLeft: windowWidth * 0.028,
+    borderRadius: 50
+  },
+  view_image_obs: {
+    marginTop: 10,
+    width: '100%',
+    height: windowWidth * 0.45,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignContent: 'flex-start',
+    elevation: 5,
+    shadowColor: 'black',
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    backgroundColor: '#f6f2f1',
+    borderRadius: 10
+  },
+  container_deck: {
+    flex: 1,
+    marginBottom: 1000
+  },
+  card: {
+    flex: 1,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#E8E8E8",
+    justifyContent: "center",
+    backgroundColor: "white",
+    padding: 20
+  },
+  text_deck: {
+    textAlign: "center",
+    fontSize: 50,
+    backgroundColor: "transparent"
   }
 });
 

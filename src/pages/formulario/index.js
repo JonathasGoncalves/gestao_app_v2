@@ -3,6 +3,7 @@ import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux'
 import * as tecnicoActions from './../../data/actions/tecnicoActions';
 import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, ImageBackground } from 'react-native';
+import { Button } from 'react-native-elements';
 import * as eventoDAO from '../../sql/DAO/evento_agendaDAO'
 import RadioGroup from 'react-native-radio-buttons-group';
 import styles from './styles';
@@ -10,11 +11,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { cortar_nome } from '../../functions/texto';
 import { Camera } from 'expo-camera';
 import { useRef } from 'react';
-
-var cont_pergunta = 1;
+import * as FileSystem from 'expo-file-system';
+import Moment from 'moment';
+import * as parametroDAO from '../../sql/DAO/parametrosDAO';
+import AwesomeAlert from 'react-native-awesome-alerts';
+import axios from 'axios';
 
 const Formulario = ({ route, navigation, id_tecnico }) => {
-
+  var cont_pergunta = 1;
   const cameraRef = useRef(null);
   const [evento, setEvento] = useState({});
   const [camera, setCamera] = useState(false);
@@ -22,20 +26,26 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
   const [hasPermission, setHasPermission] = useState(null);
   const [type, setType] = useState(Camera.Constants.Type.back);
   const [ratio, setRatio] = useState("16:9");
-  const [previewVisible, setPreviewVisible] = useState(false)
-  const [capturedImage, setCapturedImage] = useState(null)
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [diretorio, setDiretorio] = useState("");
+  const [tema_index, setTema] = useState('');
+  const [temaId, setTemaId] = useState('');
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertProps, setAlertProps] = useState({});
 
   useEffect(() => {
     //ATUALIZANDO TITULO DA TELA
     navigation.setOptions({ title: route.params.evento.titulo })
-
     cont_pergunta = 1;
     //utilizar o id do evento e buscar a versão populada
     async function buscar_perguntas() {
       const evento_completo = await eventoDAO.eventoById(route.params.evento.id);
       evento_completo.formulario.temas.map((tema) => {
         tema.perguntas.map((pergunta) => {
-          pergunta.valor_inicial = pergunta.opcoes[0].id
+          if (pergunta.opcoes.length > 0) {
+            pergunta.valor_inicial = pergunta.opcoes[0].id
+          }
           pergunta.opcoes.map((opcao) => {
             opcao.label = opcao.nome_opcao
             opcao.labelStyle = styles.opcoes
@@ -44,7 +54,7 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
           })
         })
         tema.observacao = {
-          texto_observacao: '',
+          texto_observacao: null,
           imagens: []
         }
       })
@@ -52,7 +62,30 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
       setEvento(evento_completo);
       setLoading(false);
     }
+
+    async function iniciar_diretorio() {
+      /*TRATAR ORGANIZAÇÃO DAS FOTOS TIRADAS
+            0- O DIRETORIO DE IMAGENS DEVE SER RESETADO SEMPRE QUE UM RELATÓRIO COMECA
+                0.1- VERIFICAR SE NÃO EXISTEM RELATÓRIOS PENDENTES DE UPLOAD
+                  CASO TENHA, NÃO PODE RESETAR
+            1- VERIFICAR A EXISTENCIA DO DIRETORIO RAIZ (DIR + eventos + evento_(id_evento)), CASO NÃO EXISTA CRIAR
+              exemplo: file:///...eventos/evento_420/1(um diretorio para cada tema)/obs_teste.jpg
+          */
+      // ==1 SE EXISTEM UPDATES PENDENTES
+      const update_pendente = await parametroDAO.parametrosByChave('atualizar');
+      if (update_pendente != '1') {
+        await FileSystem.deleteAsync(FileSystem.documentDirectory + 'eventos');
+      }
+      const fileInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'eventos/evento_' + route.params.evento.id + '/');
+      if (!fileInfo.exists) {
+        await FileSystem.makeDirectoryAsync(FileSystem.documentDirectory + 'eventos/evento_' + route.params.evento.id + '/', { intermediates: true })
+        setDiretorio(FileSystem.documentDirectory + 'eventos/evento_' + route.params.evento.id + '/');
+      } else {
+        setDiretorio(FileSystem.documentDirectory + 'eventos/evento_' + route.params.evento.id + '/');
+      }
+    }
     buscar_perguntas();
+    iniciar_diretorio();
   }, [])
 
   async function ratioConfig() {
@@ -62,8 +95,6 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
       setRatio(ratios[ratios.length - 1])
     }
   }
-
-
 
   function selecionar_tema(tema, index, temas) {
     return tema.perguntas.findIndex(selecionar_pergunta, this);
@@ -89,37 +120,141 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
   }
 
   async function action_text_observacao(tema, text) {
+    index_tema = evento.formulario.temas.indexOf(tema);
     evento_copia = evento;
-    evento_copia.formulario.temas[evento_copia.formulario.temas.indexOf(tema)]
+    evento_copia.formulario.temas[index_tema]
       .observacao.texto_observacao = text;
     setEvento(evento_copia)
   }
 
-  async function abrirCamera() {
-    //ALTERANDO STATE PARA EXIBIR CAMERA
-    setCamera(true)
-    //ALTERANDO RATIO
-    ratioConfig();
+  async function abrirCamera(tema) {
+    //CADA TEMA TM NO MÁXIMO 8 FOTOS
+    //NÃO ABRIR CAMERA CASO JÁ TENHAM 8 FOTOS NO TEMA
+    if (evento.formulario.temas[evento.formulario.temas.indexOf(tema)]
+      .observacao.imagens.length == 2) {
+      setAlertProps({
+        title: 'Limite de Imagens',
+        msg: 'Cada tema deve ter no máximo 8 imagens!',
+        cancel: '',
+        confirm: 'continuar'
+      })
+      setShowAlert(true);
+    } else {
+      //REGISTRANDO QUAL O TEMA ESTA SENDO EDITADO(INDEX
+      setTema(evento.formulario.temas.indexOf(tema));
+      //REGISTRANDO QUAL O ID DO TEMA SENDO EDITADO
+      setTemaId(evento.formulario.temas[evento.formulario.temas.indexOf(tema)].id)
+      //ALTERANDO STATE PARA EXIBIR CAMERA
+      setCamera(true)
+      //ALTERANDO RATIO
+      ratioConfig();
+    }
+
   }
 
   async function takePic() {
     if (cameraRef.current) {
       foto = await cameraRef.current.takePictureAsync({ skipProcessing: true });
-      console.log(foto)
       setPreviewVisible(true);
       setCamera(false);
-      setCapturedImage(foto)
+      setCapturedImage({ uri: foto.uri, imagem_indice: -1, indice_tema: -1 });
     }
   }
 
   async function savePic() {
+    //se for difeente de -1 é o retorno do save de uma imagem
+    //que já foi salva, logo não precisa fazer ação alguma
+    if (capturedImage.indice_tema == -1) {
+      const fileInfo = await FileSystem.getInfoAsync(diretorio + temaId + '/');
+      if (!fileInfo.exists) {
+        await FileSystem.makeDirectoryAsync(diretorio + temaId + '/', { intermediates: true })
+      }
+      await FileSystem.moveAsync({
+        from: capturedImage.uri,
+        to: diretorio + temaId + '/' + 'obs_' + Moment().format('hmms') + '.jpg'
+      })
+      //SALVANDO O CAMINHO DA IMAGEM NO ARRAY DO TEMA EM USO
+      evento_copia = evento;
+      id_imagem = evento_copia.formulario
+        .temas[tema_index].observacao.imagens.length;
+      evento_copia.formulario
+        .temas[tema_index].observacao.imagens
+        .push({
+          id: id_imagem,
+          path: diretorio + temaId + '/' + 'obs_' + Moment().format('hmms') + '.jpg'
+        }
+        );
 
+      setEvento(evento_copia);
+    }
+    //VOLTANDO PARA A TELA DE QUESTÕES
+    setCapturedImage(null);
+    setPreviewVisible(false);
   }
 
   async function reTakePic() {
-    setPreviewVisible(false);
-    setCapturedImage(null);
-    abrirCamera();
+    evento_copia = evento
+    if (capturedImage.indice_tema != -1) {
+      evento_copia.formulario.temas[capturedImage.indice_tema].
+        observacao.imagens.splice(indice_imagem, 1)
+      setEvento(evento_copia);
+      setCapturedImage(null);
+      setPreviewVisible(false);
+    } else {
+      setPreviewVisible(false);
+      setCapturedImage(null);
+      abrirCamera(evento.formulario.temas[tema_index]);
+    }
+  }
+
+  async function abrir_imagem(imagem, tema) {
+    indice_tema = evento.formulario.temas.indexOf(tema)
+    indice_imagem = evento.formulario.temas[indice_tema].observacao.imagens.indexOf(imagem)
+    setPreviewVisible(true);
+    setCapturedImage({ uri: imagem.path, imagem_indice: indice_imagem, indice_tema: indice_tema });
+  }
+
+  async function submeter() {
+    //OBJETO DE COM AS IMAGENS PARA UPLOAD
+    const imagens_upload = new FormData();
+    evento.formulario.temas.map((tema) => {
+      id_imagem = 0;
+      tema.observacao.imagens.map((imagem) => {
+        id_imagem++;
+        nome_aray = imagem.path.split('/')
+        nome_novo = nome_aray[nome_aray.length - 2] + '_' + nome_aray[nome_aray.length - 1] //id do tema + nome da foto
+        imagens_upload.append('foto' + '_' + nome_aray[nome_aray.length - 2] + '_' + id_imagem, {
+          name: nome_novo,
+          type: 'image/jpg',
+          uri: imagem.path,
+        });
+      })
+    })
+
+
+    if (imagens_upload._parts.length > 0) {
+      access_token = await parametroDAO.parametrosByChave('access_token');
+
+      axios({
+        url: 'http://apigestaocooperados.selita.coop.br/' + 'api/evento/submeter_evento',
+        method: 'POST',
+        data: imagens_upload,
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+          Accept: 'application/json',
+          'Content-Type': 'multipart/form-data'
+        },
+      })
+        .then(function (response) {
+          console.log('*****handle success******');
+          console.log(response.data);
+
+        })
+        .catch(function (response) {
+          console.log('*****handle failure******');
+          console.log(response);
+        });
+    }
   }
 
   return (
@@ -176,26 +311,33 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
               backgroundColor: '#f2F1f6',
               alignContent: 'flex-end'
             }}>
-              <FontAwesomeIcon
-                icon="save"
-                color="black"
-                size={30}
-                style={{ position: 'absolute', top: '20%', right: '19%' }}
+              <TouchableOpacity
                 onPress={() => savePic()}
-              />
-              <FontAwesomeIcon
-                icon="trash-alt"
-                color="black"
-                size={30}
+                style={{ position: 'absolute', top: '20%', right: '19%' }}
+              >
+                <FontAwesomeIcon
+                  icon="save"
+                  color="black"
+                  size={30}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={{ position: 'absolute', top: '20%', left: '19%' }}
                 onPress={() => reTakePic()}
-              />
+              >
+                <FontAwesomeIcon
+                  icon="trash-alt"
+                  color="black"
+                  size={30}
+                />
+              </TouchableOpacity>
+
             </View>
           </View>
         ) : (
           <ScrollView style={styles.scrollView}>
             <View style={{ padding: 20 }}>
-
               {
                 evento.formulario.temas.map((tema) => {
                   return (
@@ -225,32 +367,81 @@ const Formulario = ({ route, navigation, id_tecnico }) => {
                         <Text allowFontScaling={false} style={styles.enunciado}>{cont_pergunta++ + " - "}</Text>
                         <Text allowFontScaling={false} style={styles.enunciado}>Observações</Text>
                       </View>
+                      {
+                        tema.observacao.imagens.length > 0 &&
+                        <View style={styles.view_image_obs}>
+                          {tema.observacao.imagens.map((imagem) => {
+                            return (
+                              <TouchableOpacity
+                                key={imagem.id}
+                                onPress={() => abrir_imagem(imagem, tema)}
+                              >
+                                <ImageBackground
+
+                                  source={{ uri: imagem.path }}
+                                  imageStyle={{ borderRadius: 3 }}
+                                  style={styles.image_obs}
+                                />
+                              </TouchableOpacity>
+                            )
+                          })
+                          }
+                        </View>
+                      }
                       <View style={styles.view_observacao}>
                         <TextInput
+                          multiline
+                          autoCorrect={false}
                           style={styles.observacoes_input}
-                          multiline={true}
-                          scrollEnabled={true}
-                          placeholder={"Observações sobre " + tema.nome}
                           onChangeText={(text) => action_text_observacao(tema, text)}
-                          autoCorrect={true}
+                          value={tema.observacao.texto_observacao}
+                          placeholder="Observações"
                         />
                         <View style={styles.icon_view}>
                           <FontAwesomeIcon
                             icon="camera"
                             color="white"
                             size={25}
-                            onPress={() => abrirCamera()}
+                            onPress={() => abrirCamera(tema)}
                           />
                         </View>
                       </View>
+
                     </View>
                   )
                 })
+
               }
+              < Button
+                title="Enviar Relatório"
+                type="outline"
+                onPress={submeter}
+                titleStyle={styles.textButtonPadrao}
+                containerStyle={styles.containerButtonPadrao}
+              />
             </View>
           </ScrollView>
         )
       }
+      <AwesomeAlert
+        show={showAlert}
+        showProgress={false}
+        title={alertProps.title}
+        message={alertProps.msg}
+        closeOnTouchOutside={true}
+        closeOnHardwareBackPress={false}
+        showCancelButton={false}
+        showConfirmButton={true}
+        cancelText={alertProps.cancel}
+        confirmText={alertProps.confirm}
+        confirmButtonColor="#DD6B55"
+        onCancelPressed={() => {
+          setShowAlert(false);
+        }}
+        onConfirmPressed={() => {
+          setShowAlert(false);
+        }}
+      />
     </View>
   )
 }
@@ -266,35 +457,10 @@ export default connect(mapStateToProps, mapDispatchToProps)(Formulario);
 
 
 /*
-<View style={styles.renderItem}>
-                <View style={{ flexDirection: 'row' }}>
-                   <Text allowFontScaling={false} style={styles.textLabel}>Cooperado:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{cortar_nome(route.params.evento.cooperado_nome)}</Text>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <Text allowFontScaling={false} style={styles.textLabel}>Municipio:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.municipio}</Text>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <Text allowFontScaling={false} style={styles.textLabel}>Tanque:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.tanque}</Text>
-                  <Text allowFontScaling={false} style={styles.textLabel2}>Latao:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.latao}</Text>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <Text allowFontScaling={false} style={styles.textLabel}>Técnico:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.tecnico_nome}</Text>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <Text allowFontScaling={false} style={styles.textLabel}>Data:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.data}</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{route.params.evento.hora}</Text>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <Text allowFontScaling={false} style={styles.textLabel}>CBT:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{evento.submissao.qualidade.cbt}</Text>
-                  <Text allowFontScaling={false} style={styles.textLabel2}>CCS:</Text>
-                  <Text allowFontScaling={false} style={styles.textValue}>{evento.submissao.qualidade.ccs}</Text>
-                </View>
-              </View>
+title="Logar"
+                        type="outline"
+                        onPress={loginUser}
+                        containerStyle={userName.length == 0 || password.length == 0 ? styles.containerButtonPadraoDisable : styles.containerButtonPadrao}
+                        titleStyle={styles.textButtonPadrao}
+                        disabled={userName.length == 0 || password.length == 0}
               */
